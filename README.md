@@ -11,6 +11,8 @@ Real-time tick data collector for Hyperliquid cryptocurrency exchange using webs
 
 The collector includes robust connection handling with automatic reconnection when websocket connections are dropped or interrupted.
 
+No need of API keys.
+
 ## Data Storage
 
 Data is written to the `HL_data/` directory with separate CSV files for each symbol and data type:
@@ -54,4 +56,5 @@ python hyperliquid_data_collector.py
 ```
 
 Default symbols: BTC, ETH, SOL, WLFI
+
 Data flushes every 5 seconds, summary prints every 30 seconds.
