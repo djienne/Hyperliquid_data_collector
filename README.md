@@ -25,6 +25,42 @@ HL_data/
 └── orderbooks_{SYMBOL}.csv # Order book snapshots
 ```
 
+## Terminal output
+```
+Hyperliquid Tick Data Collector
+================================
+Order book depth: 20 levels
+2025-09-03 15:10:15,442 - INFO - Websocket connected
+2025-09-03 15:10:17,029 - INFO - Websocket connection initialized
+Starting Hyperliquid data collection for symbols: ['BTC', 'ETH', 'SOL', 'WLFI']
+Output directory: HL_data
+2025-09-03 15:10:17,029 - INFO - Subscribing to data feeds for BTC...
+2025-09-03 15:10:17,032 - INFO - Subscribing to data feeds for ETH...
+2025-09-03 15:10:17,032 - INFO - Subscribing to data feeds for SOL...
+2025-09-03 15:10:17,032 - INFO - Subscribing to data feeds for WLFI...
+2025-09-03 15:10:17,032 - INFO - Subscribed to 12 data feeds
+Data collection started. Press Ctrl+C to stop.
+Automatic reconnection enabled - connection drops will be handled automatically.
+
+============================================================
+DATA COLLECTION SUMMARY - 15:10:46
+============================================================
+Runtime: 0h 0m 32s
+Connection: 🟢 Healthy
+Time since last data: 0.0s
+Data collected:
+  trades: 109 (203.4/min)
+  orderbook_updates: 220 (410.6/min)
+  bbo_updates: 734 (1369.9/min)
+
+Buffer sizes by symbol:
+  BTC: 78 (58 prices, 11 trades, 9 orderbooks)
+  ETH: 94 (68 prices, 17 trades, 9 orderbooks)
+  SOL: 97 (78 prices, 10 trades, 9 orderbooks)
+  WLFI: 45 (34 prices, 2 trades, 9 orderbooks)
+============================================================
+```
+
 ### File Contents
 
 **prices_{SYMBOL}.csv**
@@ -58,4 +94,5 @@ python hyperliquid_data_collector.py
 Default symbols: BTC, ETH, SOL, WLFI
 
 Data flushes every 5 seconds, summary prints every 30 seconds.
+
 
