@@ -11,8 +11,6 @@ Real-time tick data collector for Hyperliquid cryptocurrency exchange using webs
 
 The collector includes robust connection handling with automatic reconnection when websocket connections are dropped or interrupted.
 
-No need for API keys.
-
 ## Data Storage
 
 Data is written to the `HL_data/` directory with separate CSV files for each symbol and data type:
@@ -23,42 +21,6 @@ HL_data/
 ├── prices_{SYMBOL}.csv     # Best bid/ask prices
 ├── trades_{SYMBOL}.csv     # Trade executions
 └── orderbooks_{SYMBOL}.csv # Order book snapshots
-```
-
-## Terminal output
-```
-Hyperliquid Tick Data Collector
-================================
-Order book depth: 20 levels
-2025-09-03 15:10:15,442 - INFO - Websocket connected
-2025-09-03 15:10:17,029 - INFO - Websocket connection initialized
-Starting Hyperliquid data collection for symbols: ['BTC', 'ETH', 'SOL', 'WLFI']
-Output directory: HL_data
-2025-09-03 15:10:17,029 - INFO - Subscribing to data feeds for BTC...
-2025-09-03 15:10:17,032 - INFO - Subscribing to data feeds for ETH...
-2025-09-03 15:10:17,032 - INFO - Subscribing to data feeds for SOL...
-2025-09-03 15:10:17,032 - INFO - Subscribing to data feeds for WLFI...
-2025-09-03 15:10:17,032 - INFO - Subscribed to 12 data feeds
-Data collection started. Press Ctrl+C to stop.
-Automatic reconnection enabled - connection drops will be handled automatically.
-
-============================================================
-DATA COLLECTION SUMMARY - 15:10:46
-============================================================
-Runtime: 0h 0m 32s
-Connection: 🟢 Healthy
-Time since last data: 0.0s
-Data collected:
-  trades: 109 (203.4/min)
-  orderbook_updates: 220 (410.6/min)
-  bbo_updates: 734 (1369.9/min)
-
-Buffer sizes by symbol:
-  BTC: 78 (58 prices, 11 trades, 9 orderbooks)
-  ETH: 94 (68 prices, 17 trades, 9 orderbooks)
-  SOL: 97 (78 prices, 10 trades, 9 orderbooks)
-  WLFI: 45 (34 prices, 2 trades, 9 orderbooks)
-============================================================
 ```
 
 ### File Contents
@@ -92,7 +54,10 @@ python hyperliquid_data_collector.py
 ```
 
 Default symbols: BTC, ETH, SOL, WLFI
-
 Data flushes every 5 seconds, summary prints every 30 seconds.
 
+## Avellaneda-Stoikov Parameter Calculation
 
+`calculate_avellaneda_parameters.py`: This script calculates optimal market making parameters using the Avellaneda-Stoikov model. It analyzes historical trade and price data to estimate volatility (sigma) and order arrival intensity (A, k). It then backtests different risk aversion (gamma) values to find the optimal parameter that maximizes profitability while managing inventory risk.
+
+`avellaneda_parameters_BTC.json`: This file stores the output of the calculation for a specific ticker (e.g., BTC). It includes key market data (mid-price, sigma, A, k), the optimized gamma, and the resulting reservation price and optimal bid/ask quotes. This provides a snapshot of the recommended market making parameters.
