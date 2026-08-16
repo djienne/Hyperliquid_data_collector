@@ -155,10 +155,28 @@ services:
         max-file: "5"
 
   # ---------------------------------------------------------------------------
-  # ETH orderbooks / prices / trades, feeding the Cartea-Jaimungal market-making
-  # estimators (get_kappa.py, get_lambda.py, get_epsilon.py) and Market_Making.py.
+  # Orderbooks / prices / trades feeding the Cartea-Jaimungal market-making
+  # estimators (get_kappa.py, get_lambda.py, get_epsilon.py) and the viability
+  # gate (verify_market_viability.py).
   # Builds from that project's scripts/ folder, whose siblings read the same data.
-  # ---------------------------------------------------------------------------
+  #
+  # SYMBOLS is no longer just ETH (2026-08-16). ETH perp is a one-tick-wide book:
+  # its touch sits 0.27 bps from mid against a 1.5 bps per-side maker fee, so a
+  # passive round trip loses ~2.5 bps no matter how the model is tuned. A public
+  # BBO screen of all 60 Hyperliquid perps above $0.5M daily volume found 28 of
+  # them pinned at exactly one tick like ETH, and only 9 that both clear the
+  # 3.0 bps round-trip fee AND are wider than one tick (i.e. where a maker can
+  # actually improve the quote rather than just queue at the touch).
+  #
+  # The five candidates below are those 9 ranked by net-after-fees, and they are
+  # collected so verify_market_viability.py can measure the part a snapshot
+  # cannot: adverse selection conditional on being filled. ETH stays as the
+  # control -- it is the known-negative baseline every candidate is compared to,
+  # and the existing dataset and replay evidence are built on it.
+  #
+  # The host dir keeps the name ./data/eth_mm: consumers reach it through
+  # junctions (Cartea-Jaimungal.../scripts/HL_data), so renaming it would break
+  # every reader for cosmetic gain.
   hl-collector:
     build:
       context: ../Cartea-Jaimungal_MARKET_MAKING_FREQTRADE/scripts
@@ -166,7 +184,20 @@ services:
     container_name: hl-collector
     restart: unless-stopped
     environment:
-      SYMBOLS: ${SYMBOLS:-ETH}
+      SYMBOLS: ${SYMBOLS:-ETH,ACE,CHIP,CASHCAT,PENGU,NIL}
+      # 3 days, up from the 60-minute default (2026-08-17). Two consumers need it:
+      # verify_market_viability.py refuses a verdict on a window under 6 hours
+      # (a 15-minute window just describes whichever regime it landed in -- see
+      # the CASHCAT burst in that script's header), and the replay acceptance
+      # gate requires min_days=3.
+      #
+      # Safe now only because both readers became retention-independent on
+      # 2026-08-17: estimator_common selects shards by the flush timestamp in
+      # their filename, and Market_Making's freshness check sorts by the same
+      # instead of stat()ing every shard. Before that, cost scaled with retention
+      # and this value would have stalled the estimator outright.
+      # Budget: ~88 MB/hour across all six symbols, so ~6.3 GB at 3 days.
+      RETENTION_MINUTES: ${RETENTION_MINUTES:-4320}
       OUTPUT_DIR: ${OUTPUT_DIR:-HL_data}
       ORDERBOOK_DEPTH: ${ORDERBOOK_DEPTH:-20}
       # Restart/reconnect if no data arrives for this many seconds
