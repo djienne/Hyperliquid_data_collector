@@ -1,0 +1,187 @@
+# All Hyperliquid data collection, in one file.
+#
+# Four collectors used to live in three different projects, each with its own compose
+# file and its own data directory. They are now operated from here and all write under
+# ./data. See README.md for what each one collects and who reads it.
+#
+#   docker compose up -d --build          # start everything
+#   docker compose logs -f <service>      # watch one
+#   docker compose down                   # stop everything
+#   python inventory.py                   # what is being collected, and is it fresh
+#
+# TWO OF THESE BUILD FROM ANOTHER PROJECT. hl-xyz-sp500-collector needs the passivbot
+# repo's src/ tree, and hl-collector needs its sibling scripts/ - so their build context
+# points out of this folder rather than the code being copied in. Only their compose
+# definition lives here. The other two collectors were moved in wholesale.
+services:
+
+  # ---------------------------------------------------------------------------
+  # HYPE 1m candles, dex "hyperliquid", plus the Hydromancer / archive raw history.
+  # Moved from freqtrade/hyperliquid_ohlcv_collector.
+  # ---------------------------------------------------------------------------
+  hyperliquid-ohlcv-collector:
+    build: ./ohlcv_collector
+    container_name: hyperliquid-ohlcv-collector
+    restart: unless-stopped
+    # Polls every 12h (MAX_CONCURRENT=2, REQUEST_INTERVAL=0.35) and is IO-bound on
+    # the HL API; the only CPU work is parquet/npy encoding of a finished cycle.
+    cpus: 0.25
+    mem_limit: 1g
+    memswap_limit: 1g
+    network_mode: host
+    volumes:
+      - type: bind
+        source: ./data/hype_ohlcv_1m
+        target: /data
+    # NO env_file. The S3 archive sources below are off because the AWS account that
+    # held those credentials was closed (user, 2026-08-16), so ./ohlcv_collector/aws.env
+    # contains dead keys and nothing reads it. Delete that file when convenient.
+    environment:
+      - DATA_DIR=/data
+      - SYMBOLS=HYPE
+      - HL_DEX=hyperliquid
+      - EARLIEST_DATE=2024-11-29
+      - POLL_INTERVAL=43200
+
+      # The only source that still works: the public candleSnapshot API. No credentials.
+      - ENABLE_API_TAIL=1
+
+      # PERMANENTLY OFF - these three read the Hydromancer Reservoir and hyperliquid-archive
+      # S3 buckets, which need AWS credentials that no longer exist. They had been failing
+      # with 403 / InvalidAccessKeyId since ~2026-07-27 (the newest raw archive file is from
+      # that date). Left at 0 rather than deleted so the deep-history path is one edit away
+      # if the account is ever recreated. With all three off, historical_backfill() returns
+      # immediately and no S3 request is attempted.
+      - ENABLE_HYDROMANCER_CANDLES=0
+      - ENABLE_HYDROMANCER_L2=0
+      - ENABLE_HYPERLIQUID_ARCHIVE_L2=0
+
+      # Inert while the three flags above are 0; they only tune the archive backfill.
+      - MAX_HISTORICAL_DAYS_PER_CYCLE=30
+      - MAX_ARCHIVE_HOURS_PER_CYCLE=720
+      - HISTORICAL_END_LAG_DAYS=2
+      - KEEP_RAW_ARCHIVE_L2=1
+      - CACHE_ALL_RAW_L2=1
+      - RAW_L2_REFRESH_LOOKBACK_DAYS=45
+      - RECENT_HYDROMANCER_REPAIR_DAYS=10
+
+      # API tail + verification settings, still live.
+      - INITIAL_LOOKBACK_MINUTES=10080
+      - REPAIR_LOOKBACK_MINUTES=10080
+      - REQUEST_INTERVAL=0.35
+      - MAX_CONCURRENT=2
+      - VERIFY_DAYS=7
+
+  # ---------------------------------------------------------------------------
+  # SP500 + NVDA 1m candles from the HIP-3 "xyz" dex.
+  # Builds from the passivbot repo: the collector is src/tools/hyperliquid_ohlcv_collector.py
+  # and imports from that project's src/ tree, so it cannot be lifted out on its own.
+  #
+  # The container path keeps the name "hyperliquid" even though the dex is "xyz" -
+  # passivbot's backtest.py / hlcv_preparation.py / config_utils.py all hardcode
+  # caches/ohlcv/hyperliquid/1m. Renaming it means editing those plus the configs
+  # and tests. The host side is ./data/xyz_ohlcv_1m, which says what it really is.
+  # ---------------------------------------------------------------------------
+  hl-xyz-sp500-collector:
+    build:
+      context: ../passivbot_Hyperliquid_SP500
+    image: passivbot-sp500
+    container_name: hl-xyz-sp500-collector
+    restart: unless-stopped
+    # Attach to Docker's pre-existing default bridge instead of creating a per-project
+    # network. The collector only needs OUTBOUND internet and this host already has many
+    # compose networks, so allocating another subnet fails with "all predefined address
+    # pools have been fully subnetted".
+    network_mode: bridge
+    working_dir: /app
+    environment:
+      - PYTHONPATH=/app/src
+      - PYTHONUTF8=1
+      - PYTHONUNBUFFERED=1
+      - SYMBOLS=SP500,NVDA          # config coin tokens -> xyz:SP500, xyz:NVDA
+      - HL_DEX=xyz                   # HIP-3 perp dex namespace
+      - POLL_INTERVAL=21600          # every 6h; API keeps only ~3.4 days of 1m candles
+      - RETRY_INTERVAL=1800          # retry a failed cycle after 30 min, not a full interval
+      - HL_REFRESH_DAYS=3            # re-fetch last N days so interior holes self-heal
+      - EARLIEST_DATE=2026-03-18     # SP500 listing day
+      - HYPERLIQUID_DATA_DIR=/app/caches/ohlcv/hyperliquid/1m
+    volumes:
+      - ./data/xyz_ohlcv_1m:/app/caches/ohlcv/hyperliquid/1m
+    cpus: 1.0
+    mem_limit: 1g
+    memswap_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    command: ["src/tools/hyperliquid_ohlcv_collector.py"]
+
+  # ---------------------------------------------------------------------------
+  # SP500 L2 order book (20 levels) from the xyz dex.
+  # Moved from freqtrade/passivbot_Hyperliquid_SP500/l2_collector.
+  # Self-contained image - no Rust, no conda, no passivbot SDK.
+  # ---------------------------------------------------------------------------
+  hl-l2-collector:
+    build: ./l2_collector
+    image: hl-l2-collector
+    container_name: hl-l2-collector
+    restart: unless-stopped
+    network_mode: bridge
+    working_dir: /app
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONUTF8=1
+      - HL_WS_URL=wss://api.hyperliquid.xyz/ws
+      - COIN=xyz:SP500
+      - MAX_LEVELS=20
+      - DATA_DIR=/app/data
+      - STATUS_PATH=/app/data/status.json
+      - FLUSH_INTERVAL=15
+      - PING_INTERVAL=20
+      - STALE_TIMEOUT=45
+      - BACKOFF_CAP=60
+    volumes:
+      - ./data/xyz_l2:/app/data
+    # Single-coin L2 WS stream flushed every 15s - IO-bound, flush is the only CPU
+    # burst. Bounds the blast radius if a stale-reconnect loop starts spinning.
+    cpus: 0.25
+    mem_limit: 1g
+    memswap_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # ETH orderbooks / prices / trades, feeding the Cartea-Jaimungal market-making
+  # estimators (get_kappa.py, get_lambda.py, get_epsilon.py) and Market_Making.py.
+  # Builds from that project's scripts/ folder, whose siblings read the same data.
+  # ---------------------------------------------------------------------------
+  hl-collector:
+    build:
+      context: ../Cartea-Jaimungal_MARKET_MAKING_FREQTRADE/scripts
+      dockerfile: Dockerfile
+    container_name: hl-collector
+    restart: unless-stopped
+    environment:
+      SYMBOLS: ${SYMBOLS:-ETH}
+      OUTPUT_DIR: ${OUTPUT_DIR:-HL_data}
+      ORDERBOOK_DEPTH: ${ORDERBOOK_DEPTH:-20}
+      # Restart/reconnect if no data arrives for this many seconds
+      INACTIVITY_TIMEOUT_SEC: ${INACTIVITY_TIMEOUT_SEC:-180}
+      MAX_RECONNECT_ATTEMPTS: ${MAX_RECONNECT_ATTEMPTS:-3}
+      RECONNECT_BACKOFF_SEC: ${RECONNECT_BACKOFF_SEC:-5}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./data/eth_mm:/app/HL_data
+    cpus: 0.25
+    mem_limit: 1g
+    memswap_limit: 1g
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: ["python", "run_collector.py"]

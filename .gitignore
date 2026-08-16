@@ -1,0 +1,55 @@
+
+# --- managed: baseline ignores (added on git init) ---
+# Credentials — never track these.
+*.pem
+*.key
+*.p12
+id_rsa*
+api-keys.json
+api_keys.json
+secrets.json
+credentials.json
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+.venv/
+venv/
+env310/
+.pytest_cache/
+.ipynb_checkpoints/
+.coverage
+
+# Bulk data / generated artifacts
+*.parquet
+*.npy
+*.npz
+*.feather
+*.pkl
+*.pickle
+*.h5
+*.db
+*.sqlite*
+*.log
+*.zip
+*.tgz
+*.tar.gz
+*.7z
+*.corrupted_*
+caches/
+cache/
+historical_data/
+optimize_results/
+node_modules/
+# --- end managed ---
+
+# --- managed: bulk-data ignores (second pass) ---
+data/
+# --- end managed ---
