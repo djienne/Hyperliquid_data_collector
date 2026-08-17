@@ -76,7 +76,8 @@ What this means in practice:
 - `ENABLE_HYDROMANCER_CANDLES`, `ENABLE_HYDROMANCER_L2` and `ENABLE_HYPERLIQUID_ARCHIVE_L2`
   are set to `0`. With all three off, `historical_backfill()` returns immediately and no S3
   request is made, so the 12h cycle no longer spends minutes collecting 403s.
-- `ohlcv_collector/aws.env` holds dead keys and is no longer referenced by the compose file.
+- `ohlcv_collector/aws.env.dead-account-2026-08-16` (the former `aws.env`, renamed) holds dead keys
+  and is no longer referenced by the compose file.
 - **The hole audit the SP500 collector prints each cycle is now unfixable.** It recommends
   `passivbot_Hyperliquid_SP500/src/tools/hyperliquid_archive_downloader.py`, which reads the
   same dead bucket. Those gaps (14 days for SP500, 80 for NVDA, including `2026-08-10:567m`)
