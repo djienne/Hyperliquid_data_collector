@@ -25,7 +25,7 @@ services:
     restart: unless-stopped
     # Polls every 12h (MAX_CONCURRENT=2, REQUEST_INTERVAL=0.35) and is IO-bound on
     # the HL API; the only CPU work is parquet/npy encoding of a finished cycle.
-    cpus: 0.25
+    cpus: 0.1
     mem_limit: 1g
     memswap_limit: 1g
     network_mode: host
@@ -107,7 +107,7 @@ services:
       - HYPERLIQUID_DATA_DIR=/app/caches/ohlcv/hyperliquid/1m
     volumes:
       - ./data/xyz_ohlcv_1m:/app/caches/ohlcv/hyperliquid/1m
-    cpus: 1.0
+    cpus: 0.1
     mem_limit: 1g
     memswap_limit: 1g
     logging:
@@ -145,7 +145,7 @@ services:
       - ./data/xyz_l2:/app/data
     # Single-coin L2 WS stream flushed every 15s - IO-bound, flush is the only CPU
     # burst. Bounds the blast radius if a stale-reconnect loop starts spinning.
-    cpus: 0.25
+    cpus: 0.1
     mem_limit: 1g
     memswap_limit: 1g
     logging:
@@ -207,7 +207,7 @@ services:
       TZ: ${TZ:-UTC}
     volumes:
       - ./data/eth_mm:/app/HL_data
-    cpus: 0.25
+    cpus: 0.1
     mem_limit: 1g
     memswap_limit: 1g
     logging:
