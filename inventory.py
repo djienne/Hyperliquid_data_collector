@@ -25,11 +25,19 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 
 # service -> (dataset dir, dex, what it collects)
+#
+# This is many-to-one, not one-to-one: hl-collector and hl-cashcat-collector both
+# write into eth_mm. They are split because CASHCAT needs 30-day retention and the
+# other five need 3 days, and they carry DISJOINT symbol lists on purpose -- two
+# collectors on the same symbol in the same directory double every trade on disk
+# (2026-08-16). The report below therefore scans each dataset once and shares the
+# figures across the services that write it, so a shared dir is not counted twice.
 COLLECTORS = {
     "hyperliquid-ohlcv-collector": ("hype_ohlcv_1m", "hyperliquid", "HYPE 1m candles + archive"),
     "hl-xyz-sp500-collector":      ("xyz_ohlcv_1m",  "xyz",         "SP500 + NVDA 1m candles"),
     "hl-l2-collector":             ("xyz_l2",        "xyz",         "SP500 L2 book (20 levels)"),
-    "hl-collector":                ("eth_mm",        "hyperliquid", "ETH orderbooks/prices/trades"),
+    "hl-collector":                ("eth_mm",        "hyperliquid", "ETH/ACE/CHIP/PENGU/NIL orderbooks/prices/trades"),
+    "hl-cashcat-collector":        ("eth_mm",        "hyperliquid", "CASHCAT orderbooks/prices/trades (30d retention)"),
 }
 
 # old consumer path (relative to the freqtrade root) -> dataset it must point at
@@ -87,9 +95,18 @@ def main() -> None:
     containers = running_containers()
     problems = []
 
+    # More than one service can write the same dataset dir (hl-collector and
+    # hl-cashcat-collector both write eth_mm), so scan each dataset once and reuse
+    # the result. Without this the shared dir is walked twice and every dataset-level
+    # problem is reported once per writer.
+    scanned: dict[str, tuple] = {}
+    writers: dict[str, list[str]] = {}
+    for service, (dataset, _dex, _desc) in COLLECTORS.items():
+        writers.setdefault(dataset, []).append(service)
+
     print(f"Data root: {DATA}\n")
-    print(f"{'service':<30} {'container':<14} {'dex':<12} {'files':>7} {'size':>9} {'newest':>11}")
-    print("-" * 90)
+    print(f"{'service':<30} {'container':<14} {'dataset':<14} {'dex':<12} {'files':>7} {'size':>9} {'newest':>11}")
+    print("-" * 104)
 
     for service, (dataset, dex, _desc) in COLLECTORS.items():
         path = DATA / dataset
@@ -98,19 +115,34 @@ def main() -> None:
         if not status.startswith("Up"):
             problems.append(f"{service} is not running ({status})")
 
+        first_writer = writers[dataset][0] == service
+
         if not path.is_dir():
-            problems.append(f"{dataset} directory is missing")
-            print(f"{service:<30} {state:<14} {dex:<12} {'-':>7} {'-':>9} {'MISSING':>11}")
+            if first_writer:
+                problems.append(f"{dataset} directory is missing")
+            print(f"{service:<30} {state:<14} {dataset:<14} {dex:<12} {'-':>7} {'-':>9} {'MISSING':>11}")
             continue
 
-        count, total, age = scan(path)
+        if dataset not in scanned:
+            scanned[dataset] = scan(path)
+        count, total, age = scanned[dataset]
         age_s = f"{age:.0f} min" if age is not None else "never"
-        print(f"{service:<30} {state:<14} {dex:<12} {count:>7} {total/1e9:>8.2f}G {age_s:>11}")
+        print(f"{service:<30} {state:<14} {dataset:<14} {dex:<12} {count:>7} {total/1e9:>8.2f}G {age_s:>11}")
 
+        # Dataset-level facts (file count, staleness) belong to the dir, not to any
+        # one writer -- report them once, against the first service that claims it.
+        if not first_writer:
+            continue
         if age is None:
             problems.append(f"{dataset} has no files")
         elif args.max_age_min and age > args.max_age_min:
             problems.append(f"{dataset} newest file is {age:.0f} min old")
+
+    for dataset, services in writers.items():
+        if len(services) > 1:
+            print(f"\nNote: {dataset} is written by {len(services)} services ({', '.join(services)});")
+            print("      the file/size/age figures above are for the shared directory, counted once.")
+            print("      Their SYMBOLS lists must stay disjoint or every trade lands on disk twice.")
 
     print("\nJunctions (old consumer paths -> this data root):")
     freq_root = ROOT.parent

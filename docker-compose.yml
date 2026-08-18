@@ -184,7 +184,10 @@ services:
     container_name: hl-collector
     restart: unless-stopped
     environment:
-      SYMBOLS: ${SYMBOLS:-ETH,ACE,CHIP,CASHCAT,PENGU,NIL}
+      # CASHCAT is deliberately absent: it has its own container below
+      # (hl-cashcat-collector) because it needs a 30-day retention. The two
+      # services must never both list a symbol -- see that comment block.
+      SYMBOLS: ${SYMBOLS:-ETH,ACE,CHIP,PENGU,NIL}
       # 3 days, up from the 60-minute default (2026-08-17). Two consumers need it:
       # verify_market_viability.py refuses a verdict on a window under 6 hours
       # (a 15-minute window just describes whichever regime it landed in -- see
@@ -196,8 +199,71 @@ services:
       # their filename, and Market_Making's freshness check sorts by the same
       # instead of stat()ing every shard. Before that, cost scaled with retention
       # and this value would have stalled the estimator outright.
-      # Budget: ~88 MB/hour across all six symbols, so ~6.3 GB at 3 days.
+      # Budget: ~88 MB/hour was measured across all six symbols (~6.3 GB at
+      # 3 days); CASHCAT has since moved to its own container, so this one now
+      # carries five.
       RETENTION_MINUTES: ${RETENTION_MINUTES:-4320}
+      OUTPUT_DIR: ${OUTPUT_DIR:-HL_data}
+      ORDERBOOK_DEPTH: ${ORDERBOOK_DEPTH:-20}
+      # Restart/reconnect if no data arrives for this many seconds
+      INACTIVITY_TIMEOUT_SEC: ${INACTIVITY_TIMEOUT_SEC:-180}
+      MAX_RECONNECT_ATTEMPTS: ${MAX_RECONNECT_ATTEMPTS:-3}
+      RECONNECT_BACKOFF_SEC: ${RECONNECT_BACKOFF_SEC:-5}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./data/eth_mm:/app/HL_data
+    cpus: 0.1
+    mem_limit: 1g
+    memswap_limit: 1g
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: ["python", "run_collector.py"]
+
+  # ---------------------------------------------------------------------------
+  # CASHCAT only, same code and same output directory as hl-collector above, but
+  # a 30-day retention instead of 3 days.
+  #
+  # WHY IT IS CARVED OUT
+  #
+  # 1. CASHCAT is the only symbol that passes verify_market_viability.py. Of the
+  #    five candidates the wide-book screen produced, it is the one that clears
+  #    the 3.0 bps round-trip fee after adverse selection, so it is the symbol
+  #    the strategy actually quotes. The other five are still collected next
+  #    door as controls/candidates, and 3 days is enough for that job.
+  #
+  # 2. It needs a far longer tape than they do. Backtests, parameter sweeps and
+  #    the replay acceptance gate all read the traded symbol, and a 3-day window
+  #    cannot separate the instrument from the regime it happened to be in --
+  #    a CASHCAT burst at 19.3x its own daily average volume made a short window
+  #    read +$4,117/h. 30 days costs ~32 MB/day across its three streams
+  #    (orderbook / price / trades), i.e. ~1 GB. Giving all six symbols 30 days
+  #    would cost roughly 60x that, which is why the split exists at all.
+  #
+  # 3. THE TWO COLLECTORS MUST NEVER SHARE A SYMBOL. Both write into
+  #    ./data/eth_mm. On 2026-08-16 two collectors were run over the same symbol
+  #    into the same directory: each wrote its own shards under its own names,
+  #    nothing collided or errored, and every trade simply landed on disk twice.
+  #    The estimators read the directory, not the writer, so n_trades and
+  #    lambda+/lambda- silently doubled and nothing flagged it. So: CASHCAT is
+  #    here and NOWHERE in hl-collector's SYMBOLS; if you add a symbol to one
+  #    list, remove it from the other in the same edit.
+  # ---------------------------------------------------------------------------
+  hl-cashcat-collector:
+    build:
+      context: ../Cartea-Jaimungal_MARKET_MAKING_FREQTRADE/scripts
+      dockerfile: Dockerfile
+    container_name: hl-cashcat-collector
+    restart: unless-stopped
+    environment:
+      SYMBOLS: CASHCAT
+      # 30 days. Affordable only because compaction merges an hour of shards
+      # into one file, and because both readers select shards by the flush
+      # timestamp in the filename rather than stat()ing every file on disk
+      # (2026-08-17) -- read cost tracks the window asked for, not retention.
+      RETENTION_MINUTES: ${CASHCAT_RETENTION_MINUTES:-43200}
       OUTPUT_DIR: ${OUTPUT_DIR:-HL_data}
       ORDERBOOK_DEPTH: ${ORDERBOOK_DEPTH:-20}
       # Restart/reconnect if no data arrives for this many seconds
