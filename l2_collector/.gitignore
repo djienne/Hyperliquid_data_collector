@@ -1,0 +1,11 @@
+data/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Secrets — the real .env must never be committed.
+.env
+.env.*
+
+# ...but the placeholder template must stay tracked.
+!.env.example

@@ -53,3 +53,6 @@ node_modules/
 # --- managed: bulk-data ignores (second pass) ---
 data/
 # --- end managed ---
+
+# Local backups
+*.bak

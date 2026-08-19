@@ -1,0 +1,3 @@
+[submodule "ohlcv_collector"]
+	path = ohlcv_collector
+	url = https://github.com/djienne/download_hyperliquid_ohlcv_data.git
