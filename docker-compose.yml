@@ -183,6 +183,29 @@ services:
       dockerfile: Dockerfile
     container_name: hl-collector
     restart: unless-stopped
+    # Liveness that means "data is landing", not "the process exists". The
+    # os._exit(1) path below covers a dead or quiet socket, but a wedged
+    # process still holding the socket, or writes failing silently, leave the
+    # container Up forever with nothing restarting it. This reads the flush
+    # timestamp out of the newest shard FILENAME -- no stat() per file, so
+    # cost tracks directory size, not retention (6,219 files in 29 ms).
+    #
+    # Scoped to this container's own SYMBOLS: both collectors share the mount
+    # and can see each other's directories, so an unscoped check would let a
+    # wedged CASHCAT collector look healthy off the other one's writes.
+    #
+    # 600s is deliberately well above the app's own stall recovery
+    # (INACTIVITY_TIMEOUT_SEC 180 + 3 reconnects), so this only fires when
+    # that path has already failed to fire. The autoheal service at the
+    # bottom is what actually restarts an unhealthy container.
+    healthcheck:
+      test: python -c 'import os,time,glob,re,sys; syms=[s.strip() for s in os.environ.get("SYMBOLS","").split(",") if s.strip()]; root=os.environ.get("OUTPUT_DIR","HL_data"); files=[f for s in syms for d in ("orderbooks","prices","trades") for f in glob.glob("/app/"+root+"/"+s+"/"+d+"/*_*.parquet")]; ts=[int(m.group(1)) for m in (re.search(r"_(\d{13})\.parquet$",f) for f in files) if m]; best=max(ts) if ts else 0; sys.exit(0 if best and (time.time()*1000-best)/1000 < float(os.environ.get("HEALTH_MAX_AGE_SEC","600")) else 1)'
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 300s
+    labels:
+      - autoheal=true
     environment:
       # CASHCAT is deliberately absent: it has its own container below
       # (hl-cashcat-collector) because it needs a 30-day retention. The two
@@ -257,6 +280,29 @@ services:
       dockerfile: Dockerfile
     container_name: hl-cashcat-collector
     restart: unless-stopped
+    # Liveness that means "data is landing", not "the process exists". The
+    # os._exit(1) path below covers a dead or quiet socket, but a wedged
+    # process still holding the socket, or writes failing silently, leave the
+    # container Up forever with nothing restarting it. This reads the flush
+    # timestamp out of the newest shard FILENAME -- no stat() per file, so
+    # cost tracks directory size, not retention (6,219 files in 29 ms).
+    #
+    # Scoped to this container's own SYMBOLS: both collectors share the mount
+    # and can see each other's directories, so an unscoped check would let a
+    # wedged CASHCAT collector look healthy off the other one's writes.
+    #
+    # 600s is deliberately well above the app's own stall recovery
+    # (INACTIVITY_TIMEOUT_SEC 180 + 3 reconnects), so this only fires when
+    # that path has already failed to fire. The autoheal service at the
+    # bottom is what actually restarts an unhealthy container.
+    healthcheck:
+      test: python -c 'import os,time,glob,re,sys; syms=[s.strip() for s in os.environ.get("SYMBOLS","").split(",") if s.strip()]; root=os.environ.get("OUTPUT_DIR","HL_data"); files=[f for s in syms for d in ("orderbooks","prices","trades") for f in glob.glob("/app/"+root+"/"+s+"/"+d+"/*_*.parquet")]; ts=[int(m.group(1)) for m in (re.search(r"_(\d{13})\.parquet$",f) for f in files) if m]; best=max(ts) if ts else 0; sys.exit(0 if best and (time.time()*1000-best)/1000 < float(os.environ.get("HEALTH_MAX_AGE_SEC","600")) else 1)'
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 300s
+    labels:
+      - autoheal=true
     environment:
       SYMBOLS: CASHCAT
       # 30 days. Affordable only because compaction merges an hour of shards
@@ -282,3 +328,36 @@ services:
         max-size: "10m"
         max-file: "3"
     command: ["python", "run_collector.py"]
+
+  # ---------------------------------------------------------------------------
+  # Restarts any container in this file that reports unhealthy. Docker itself
+  # never acts on a failing healthcheck outside Swarm -- it only marks the
+  # container -- so without this the healthchecks above would be observability
+  # and nothing more.
+  #
+  # Scoped by label (autoheal=true), not AUTOHEAL_CONTAINER_LABEL=all, so it can
+  # only ever touch the two collectors and never the trading stack or any other
+  # project's containers on this daemon.
+  #
+  # It needs the Docker socket; that is the whole reason it is a separate
+  # minimal image rather than logic inside the collector.
+  # ---------------------------------------------------------------------------
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: autoheal
+    restart: unless-stopped
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      - AUTOHEAL_INTERVAL=30
+      - AUTOHEAL_START_PERIOD=300
+      - AUTOHEAL_DEFAULT_STOP_TIMEOUT=15
+      - DOCKER_SOCK=/var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    cpus: 0.05
+    mem_limit: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
