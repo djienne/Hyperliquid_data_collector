@@ -208,7 +208,7 @@ services:
       - autoheal=true
     environment:
       # CASHCAT is deliberately absent: it has its own container below
-      # (hl-cashcat-collector) because it needs a 30-day retention. The two
+      # (hl-cashcat-collector) because it needs a far longer retention. The two
       # services must never both list a symbol -- see that comment block.
       SYMBOLS: ${SYMBOLS:-ETH,ACE,CHIP,PENGU,NIL}
       # 3 days, up from the 60-minute default (2026-08-17). Two consumers need it:
@@ -247,7 +247,7 @@ services:
 
   # ---------------------------------------------------------------------------
   # CASHCAT only, same code and same output directory as hl-collector above, but
-  # a 30-day retention instead of 3 days.
+  # a long retention (CASHCAT_RETENTION_MINUTES below) instead of 3 days.
   #
   # WHY IT IS CARVED OUT
   #
@@ -261,9 +261,10 @@ services:
   #    the replay acceptance gate all read the traded symbol, and a 3-day window
   #    cannot separate the instrument from the regime it happened to be in --
   #    a CASHCAT burst at 19.3x its own daily average volume made a short window
-  #    read +$4,117/h. 30 days costs ~32 MB/day across its three streams
-  #    (orderbook / price / trades), i.e. ~1 GB. Giving all six symbols 30 days
-  #    would cost roughly 60x that, which is why the split exists at all.
+  #    read +$4,117/h. The tape costs ~32 MB/day across its three streams
+  #    (orderbook / price / trades), so the disk bill is that rate times the
+  #    retention. Giving all six symbols the long retention would cost roughly
+  #    60x that, which is why the split exists at all.
   #
   # 3. THE TWO COLLECTORS MUST NEVER SHARE A SYMBOL. Both write into
   #    ./data/eth_mm. On 2026-08-16 two collectors were run over the same symbol
@@ -305,11 +306,12 @@ services:
       - autoheal=true
     environment:
       SYMBOLS: CASHCAT
-      # 30 days. Affordable only because compaction merges an hour of shards
-      # into one file, and because both readers select shards by the flush
-      # timestamp in the filename rather than stat()ing every file on disk
-      # (2026-08-17) -- read cost tracks the window asked for, not retention.
-      RETENTION_MINUTES: ${CASHCAT_RETENTION_MINUTES:-43200}
+      # 60 days (raised from 30 on 2026-09-11). Affordable only because
+      # compaction merges an hour of shards into one file, and because both
+      # readers select shards by the flush timestamp in the filename rather
+      # than stat()ing every file on disk (2026-08-17) -- read cost tracks
+      # the window asked for, not retention.
+      RETENTION_MINUTES: ${CASHCAT_RETENTION_MINUTES:-86400}
       OUTPUT_DIR: ${OUTPUT_DIR:-HL_data}
       ORDERBOOK_DEPTH: ${ORDERBOOK_DEPTH:-20}
       # Restart/reconnect if no data arrives for this many seconds

@@ -27,7 +27,8 @@ DATA = ROOT / "data"
 # service -> (dataset dir, dex, what it collects)
 #
 # This is many-to-one, not one-to-one: hl-collector and hl-cashcat-collector both
-# write into eth_mm. They are split because CASHCAT needs 30-day retention and the
+# write into eth_mm. They are split because CASHCAT needs a long retention
+# (CASHCAT_RETENTION_MINUTES in docker-compose.yml) and the
 # other five need 3 days, and they carry DISJOINT symbol lists on purpose -- two
 # collectors on the same symbol in the same directory double every trade on disk
 # (2026-08-16). The report below therefore scans each dataset once and shares the

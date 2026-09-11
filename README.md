@@ -25,7 +25,7 @@ python inventory.py               # what is collected, where it lands, is it fre
 | `hl-xyz-sp500-collector` | `xyz` (HIP-3) | SP500 + NVDA 1m candles | `data/xyz_ohlcv_1m/` |
 | `hl-l2-collector` | `xyz` (HIP-3) | SP500 L2 order book, 20 levels | `data/xyz_l2/` |
 | `hl-collector` | `hyperliquid` | ETH, ACE, CHIP, PENGU, NIL orderbooks / prices / trades | `data/eth_mm/` |
-| `hl-cashcat-collector` | `hyperliquid` | CASHCAT only, 30-day retention | `data/eth_mm/` |
+| `hl-cashcat-collector` | `hyperliquid` | CASHCAT only, long retention (`CASHCAT_RETENTION_MINUTES`) | `data/eth_mm/` |
 
 Poll cadence: HYPE every 12h, SP500/NVDA every 6h (the public `candleSnapshot` API only
 retains ~3.4 days of 1m candles, so 6h leaves ~13 missed polls of headroom). The three
@@ -33,7 +33,8 @@ L2/MM collectors are continuous WebSocket streams.
 
 **`hl-collector` and `hl-cashcat-collector` write into the same directory, so their
 `SYMBOLS` lists must stay disjoint.** They are two containers only because CASHCAT is kept
-for 30 days while everything else is kept for 3. If a symbol appears in both lists every
+far longer (`CASHCAT_RETENTION_MINUTES` in the compose file is the single place that value
+is set) while everything else is kept for 3 days. If a symbol appears in both lists every
 one of its trades lands on disk twice, which silently doubles `n_trades` and the fitted
 arrival rate for anything reading that dataset. This happened on 2026-08-16 and is what
 the split is designed to prevent. `inventory.py` prints the shared-directory warning.
