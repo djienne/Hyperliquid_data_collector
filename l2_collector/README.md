@@ -2,7 +2,10 @@
 
 A self-contained, dockerized daemon that subscribes to the **public `l2Book` WebSocket**
 for one coin (default **`xyz:SP500`**, the Trade[XYZ] HIP-3 S&P 500 perp) and records every
-distinct order-book snapshot into **crash-safe hourly parquet files**.
+distinct order-book snapshot into **crash-safe hourly parquet files**. Subscriptions
+use `fast: true`: the 2026-10-01 probe returned five levels per side at about 0.54 s
+intervals. The 20-level storage cap retains extra levels if the venue supplies them;
+it cannot make the fast feed supply deeper levels.
 
 This is a forward-only, **sub-1-minute** capture, and it is now the **only** source of
 `xyz:SP500` book history. It used to be the fine-grained companion to the 1-minute Reservoir
@@ -13,7 +16,7 @@ was closed on 2026-08-16. See "The S3 archive is gone" in [`../README.md`](../RE
 The image is self-contained — no Rust, no conda, no passivbot SDK — and needs no credentials,
 because `l2Book` is public.
 
-**It is not operated from this folder.** Since 2026-08-16 all four Hyperliquid collectors run
+**It is not operated from this folder.** The shared Hyperliquid collectors run
 from a single compose file in the parent directory, where this one is the service
 **`hl-l2-collector`**. This folder holds only the code: `Dockerfile`, `collector.py`,
 `l2lib.py`, `requirements.txt` and `tests/`. There is no compose file and no local `data/`
@@ -30,7 +33,7 @@ docker compose logs -f hl-l2-collector                        # watch
 docker compose stop hl-l2-collector                           # stop (resumes cleanly on next up)
 ```
 
-A bare `docker compose down` tears down **all four** Hyperliquid collectors, not just this one.
+A bare `docker compose down` tears down the whole shared collection stack, not just this one.
 
 Run it directly instead of in Docker (needs `pip install -r requirements.txt`). Point `DATA_DIR`
 at the shared data root so it writes where the containerised service does — otherwise it creates

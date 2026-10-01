@@ -29,16 +29,16 @@ DATA = ROOT / "data"
 # This is many-to-one, not one-to-one: hl-collector and hl-cashcat-collector both
 # write into eth_mm. They are split because CASHCAT needs a long retention
 # (CASHCAT_RETENTION_MINUTES in docker-compose.yml) and the
-# other five need 3 days, and they carry DISJOINT symbol lists on purpose -- two
+# other symbols keep 30 days, and they carry DISJOINT symbol lists on purpose -- two
 # collectors on the same symbol in the same directory double every trade on disk
 # (2026-08-16). The report below therefore scans each dataset once and shares the
 # figures across the services that write it, so a shared dir is not counted twice.
 COLLECTORS = {
     "hyperliquid-ohlcv-collector": ("hype_ohlcv_1m", "hyperliquid", "HYPE 1m candles + archive"),
     "hl-xyz-sp500-collector":      ("xyz_ohlcv_1m",  "xyz",         "SP500 + NVDA 1m candles"),
-    "hl-l2-collector":             ("xyz_l2",        "xyz",         "SP500 L2 book (20 levels)"),
-    "hl-collector":                ("eth_mm",        "hyperliquid", "ETH/ACE/CHIP/PENGU/NIL orderbooks/prices/trades"),
-    "hl-cashcat-collector":        ("eth_mm",        "hyperliquid", "CASHCAT orderbooks/prices/trades (30d retention)"),
+    "hl-l2-collector":             ("xyz_l2",        "xyz",         "SP500 fast L2 (currently 5 levels)"),
+    "hl-collector":                ("eth_mm",        "hyperliquid", "ETH/ACE/CHIP/PENGU/NIL/PAXG books/trades/context (30d)"),
+    "hl-cashcat-collector":        ("eth_mm",        "hyperliquid", "CASHCAT books/trades/context (60d retention)"),
 }
 
 # old consumer path (relative to the freqtrade root) -> dataset it must point at

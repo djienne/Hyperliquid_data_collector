@@ -36,7 +36,7 @@ import pyarrow.parquet as pq
 
 log = logging.getLogger("hl-l2.l2lib")
 
-# Live l2Book pushes up to 20 levels/side; we store what arrives, capped here.
+# Storage ceiling; fast l2Book currently supplies five levels per side.
 MAX_LEVELS = 20
 
 LEVEL_STRUCT = pa.struct([("px", pa.string()), ("sz", pa.string()), ("n", pa.int32())])
@@ -54,8 +54,8 @@ SCHEMA = pa.schema(
 # WebSocket protocol messages
 # ---------------------------------------------------------------------------
 def subscribe_message(coin: str) -> dict:
-    """l2Book subscription. Full precision (no nSigFigs) => up to 20 levels/side."""
-    return {"method": "subscribe", "subscription": {"type": "l2Book", "coin": coin}}
+    """Fast, full-precision snapshots; store only the levels supplied by the venue."""
+    return {"method": "subscribe", "subscription": {"type": "l2Book", "coin": coin, "fast": True}}
 
 
 def ping_message() -> dict:

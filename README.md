@@ -1,7 +1,7 @@
 # Hyperliquid data collection
 
-Everything that collects Hyperliquid data is operated from here. One compose file, one
-data root.
+The shared Hyperliquid collectors are operated from here, with one Compose file and
+data root. Individual experiments may also keep isolated captures.
 
 ```bash
 docker compose up -d --build      # start all five collectors
@@ -23,8 +23,8 @@ python inventory.py               # what is collected, where it lands, is it fre
 |---|---|---|---|
 | `hyperliquid-ohlcv-collector` | `hyperliquid` | HYPE 1m candles + Hydromancer/archive raw L2 history | `data/hype_ohlcv_1m/` |
 | `hl-xyz-sp500-collector` | `xyz` (HIP-3) | SP500 + NVDA 1m candles | `data/xyz_ohlcv_1m/` |
-| `hl-l2-collector` | `xyz` (HIP-3) | SP500 L2 order book, 20 levels | `data/xyz_l2/` |
-| `hl-collector` | `hyperliquid` | ETH, ACE, CHIP, PENGU, NIL orderbooks / prices / trades | `data/eth_mm/` |
+| `hl-l2-collector` | `xyz` (HIP-3) | SP500 fast L2 snapshots | `data/xyz_l2/` |
+| `hl-collector` | `hyperliquid` | ETH, ACE, CHIP, PENGU, NIL, PAXG fast books / BBO / executed trades / asset context | `data/eth_mm/` |
 | `hl-cashcat-collector` | `hyperliquid` | CASHCAT only, long retention (`CASHCAT_RETENTION_MINUTES`) | `data/eth_mm/` |
 
 Poll cadence: HYPE every 12h, SP500/NVDA every 6h (the public `candleSnapshot` API only
@@ -34,10 +34,24 @@ L2/MM collectors are continuous WebSocket streams.
 **`hl-collector` and `hl-cashcat-collector` write into the same directory, so their
 `SYMBOLS` lists must stay disjoint.** They are two containers only because CASHCAT is kept
 far longer (`CASHCAT_RETENTION_MINUTES` in the compose file is the single place that value
-is set) while everything else is kept for 3 days. If a symbol appears in both lists every
+is set) while the general collector keeps 30 days. If a symbol appears in both lists every
 one of its trades lands on disk twice, which silently doubles `n_trades` and the fitted
 arrival rate for anything reading that dataset. This happened on 2026-08-16 and is what
 the split is designed to prevent. `inventory.py` prints the shared-directory warning.
+
+All three L2 collectors subscribe with `fast: true` and save every received snapshot.
+A 2026-10-01 ETH probe measured a median 0.54 s interval and **five actual levels per
+side**, compared with 5.51 s and 20 levels in normal mode. Adding `nLevels: 20` did
+not increase fast-feed depth. `ORDERBOOK_DEPTH=20` / `MAX_LEVELS=20` are storage
+ceilings, not a promise of 20 supplied levels; absent deeper levels remain missing.
+
+For A–S research, `data/eth_mm/<COIN>/` stores `orderbooks/`, `prices/`, `trades/` and
+`asset_ctx/`. Books and trades preserve exchange and receipt timestamps; trades include
+price, size, aggressor side and trade ID. Asset contexts include mark/oracle prices and
+predicted funding. The Avellaneda experiment additionally records market metadata,
+settled funding and parameter snapshots in its own `runtime/paper/` archive. These
+captures support later volatility/intensity estimation and chronological parameter
+comparisons; public trades cannot establish a live order's queue position.
 
 ## Where the code lives
 
@@ -131,8 +145,6 @@ if an archive account ever exists again.
 
 ## Related but not here
 
-A retired fork of the Hyperliquid market-making collector exists in another local checkout.
-It does not run and is not wired to anything here; if you find a second copy of
-`hyperliquid_data_collector.py` on the machine, this one is the live copy. Collection for
-other venues is operated from their own projects and shares nothing with this compose file
-except the habit of writing under a single data root.
+`AVELLANEDA_MARKET_MAKING_FREQTRADE` runs an independent PAXG/ETH collector under
+`runtime/paper/market-data/`. Its files do not share this collector's output directory.
+Collection for other venues is operated from their own projects.

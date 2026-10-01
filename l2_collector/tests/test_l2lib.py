@@ -283,7 +283,7 @@ def test_is_stale():
 def test_protocol_messages():
     assert l2lib.subscribe_message("xyz:SP500") == {
         "method": "subscribe",
-        "subscription": {"type": "l2Book", "coin": "xyz:SP500"},
+        "subscription": {"type": "l2Book", "coin": "xyz:SP500", "fast": True},
     }
     assert l2lib.ping_message() == {"method": "ping"}
 

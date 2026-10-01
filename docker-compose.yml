@@ -118,7 +118,7 @@ services:
     command: ["src/tools/hyperliquid_ohlcv_collector.py"]
 
   # ---------------------------------------------------------------------------
-  # SP500 L2 order book (20 levels) from the xyz dex.
+  # SP500 fast L2 snapshots from the xyz dex (storage cap 20; feed currently sends 5).
   # Moved from freqtrade/passivbot_Hyperliquid_SP500/l2_collector.
   # Self-contained image - no Rust, no conda, no passivbot SDK.
   # ---------------------------------------------------------------------------
@@ -210,22 +210,10 @@ services:
       # CASHCAT is deliberately absent: it has its own container below
       # (hl-cashcat-collector) because it needs a far longer retention. The two
       # services must never both list a symbol -- see that comment block.
-      SYMBOLS: ${SYMBOLS:-ETH,ACE,CHIP,PENGU,NIL}
-      # 3 days, up from the 60-minute default (2026-08-17). Two consumers need it:
-      # verify_market_viability.py refuses a verdict on a window under 6 hours
-      # (a 15-minute window just describes whichever regime it landed in -- see
-      # the CASHCAT burst in that script's header), and the replay acceptance
-      # gate requires min_days=3.
-      #
-      # Safe now only because both readers became retention-independent on
-      # 2026-08-17: estimator_common selects shards by the flush timestamp in
-      # their filename, and Market_Making's freshness check sorts by the same
-      # instead of stat()ing every shard. Before that, cost scaled with retention
-      # and this value would have stalled the estimator outright.
-      # Budget: ~88 MB/hour was measured across all six symbols (~6.3 GB at
-      # 3 days); CASHCAT has since moved to its own container, so this one now
-      # carries five.
-      RETENTION_MINUTES: ${RETENTION_MINUTES:-4320}
+      SYMBOLS: ${SYMBOLS:-ETH,ACE,CHIP,PENGU,NIL,PAXG}
+      # Thirty days for chronological parameter comparisons; older shards are
+      # compacted hourly. CASHCAT remains in its separate 60-day collector.
+      RETENTION_MINUTES: ${RETENTION_MINUTES:-43200}
       OUTPUT_DIR: ${OUTPUT_DIR:-HL_data}
       ORDERBOOK_DEPTH: ${ORDERBOOK_DEPTH:-20}
       # Restart/reconnect if no data arrives for this many seconds
@@ -246,34 +234,9 @@ services:
     command: ["python", "run_collector.py"]
 
   # ---------------------------------------------------------------------------
-  # CASHCAT only, same code and same output directory as hl-collector above, but
-  # a long retention (CASHCAT_RETENTION_MINUTES below) instead of 3 days.
-  #
-  # WHY IT IS CARVED OUT
-  #
-  # 1. CASHCAT is the only symbol that passes verify_market_viability.py. Of the
-  #    five candidates the wide-book screen produced, it is the one that clears
-  #    the 3.0 bps round-trip fee after adverse selection, so it is the symbol
-  #    the strategy actually quotes. The other five are still collected next
-  #    door as controls/candidates, and 3 days is enough for that job.
-  #
-  # 2. It needs a far longer tape than they do. Backtests, parameter sweeps and
-  #    the replay acceptance gate all read the traded symbol, and a 3-day window
-  #    cannot separate the instrument from the regime it happened to be in --
-  #    a CASHCAT burst at 19.3x its own daily average volume made a short window
-  #    read +$4,117/h. The tape costs ~32 MB/day across its three streams
-  #    (orderbook / price / trades), so the disk bill is that rate times the
-  #    retention. Giving all six symbols the long retention would cost roughly
-  #    60x that, which is why the split exists at all.
-  #
-  # 3. THE TWO COLLECTORS MUST NEVER SHARE A SYMBOL. Both write into
-  #    ./data/eth_mm. On 2026-08-16 two collectors were run over the same symbol
-  #    into the same directory: each wrote its own shards under its own names,
-  #    nothing collided or errored, and every trade simply landed on disk twice.
-  #    The estimators read the directory, not the writer, so n_trades and
-  #    lambda+/lambda- silently doubled and nothing flagged it. So: CASHCAT is
-  #    here and NOWHERE in hl-collector's SYMBOLS; if you add a symbol to one
-  #    list, remove it from the other in the same edit.
+  # CASHCAT uses the same code/output root but retains 60 days versus 30 for
+  # the general collector. Keep SYMBOLS disjoint: duplicate writers inflate
+  # trade counts and fitted arrival rates. A symbol must belong to only one.
   # ---------------------------------------------------------------------------
   hl-cashcat-collector:
     build:
